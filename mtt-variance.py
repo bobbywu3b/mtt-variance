@@ -1,21 +1,36 @@
+#!/usr/bin/env python3
+
 import numpy as np
 import matplotlib.pyplot as plt
 
 # inputs
-num_players = 1040
-buyin = 400
-rake = 55 / 400
+num_players = 53
+buyin = 150
+rake = 25/150
 roi = 0.2
-num_tournaments = 1000
-samples = 1000
+num_tournaments = 10
+samples = 1
 starting_bankroll = 10000
 
-prizepool = [72000, 45400, 29450, 20350, 15740, 12600, 10750, 9000, 7400, 
-    5800, 5800, 4400, 4400, 3200, 3200, 2400, 2400, 2400] + [1800] * 9 + [1400] * 9
-    + [1200] * 9 + [1100] * 18 + [1000] * 18 + [900] * 9 + [850] * 9 + [800] * 6
+prizepool = [2025, 1400, 950, 650, 450, 350, 300, 0]
 
-prob_cashing = (1 / num_players) * (1 + roi)
-prob_no_cash = 1 - (len(prizeool) * probability_cashing)
+prob_cash = buyin * (roi + 1) / sum(prizepool)
+prob_bust = 1 - prob_cash * (len(prizepool) - 1)
 
-all_probs = [prob_cashing] * len(prizepool) + [prob_no_cash]
-all_payouts = prizepool + [0]
+probabilities = [prob_cash] * (len(prizepool) - 1) + [prob_bust]
+
+def run_simulation():
+    rng = np.random.default_rng()
+    final_bankrolls = []
+
+    for _ in range(samples):
+        outcomes = rng.choice(prizepool, size=num_tournaments, p=probabilities)
+        print(outcomes)
+
+        profit = np.sum(outcomes) - (buyin * num_tournaments)
+        final_bankrolls.append(profit)
+
+    return np.array(final_bankrolls)
+
+results = run_simulation()
+print(results)
