@@ -6,7 +6,8 @@ from core import (
     get_weighted_probabilities,
     run_simulation,
     compute_stats,
-    compute_required_buyins,
+    simulate_risk_of_ruin,
+    find_buyins_for_ror,
     generate_prizepool,
 )
 
@@ -126,39 +127,6 @@ with st.expander(
     }
     st.table(pool_data)
 
-# ── Bankroll requirement (analytical) ────────────────────────────────────────
-try:
-    probs_preview = get_weighted_probabilities(prizepool, roi, buyin)
-    stats_preview = compute_stats(np.array([0.0]), probs_preview, prizepool, buyin, 1)
-    std_preview = stats_preview["std_math"]
-    buyins_needed = compute_required_buyins(std_preview, buyin, roi, ror)
-    bankroll_needed = buyins_needed * buyin
-
-    st.subheader("Bankroll Requirement")
-    if roi <= 0:
-        st.warning("Bankroll requirement is undefined for zero or negative ROI.")
-    else:
-        br1, br2, br3 = st.columns(3)
-        br1.metric("Risk Profile", f"{profile_name} ({ror_pct_str} RoR)")
-        br2.metric("Buy-ins Required", f"{buyins_needed:,.0f}")
-        br3.metric("Bankroll Required", f"${bankroll_needed:,.0f}")
-
-        with st.expander("Compare all profiles"):
-            rows = []
-            for pname, pdata in RISK_PROFILES.items():
-                r = ror if pname == "Custom" else pdata["ror"]
-                if r is None:
-                    continue
-                bn = compute_required_buyins(std_preview, buyin, roi, r)
-                rows.append({
-                    "Profile": f"{pname} ({r:.1%})",
-                    "Buy-ins Required": f"{bn:,.0f}",
-                    "Bankroll Required": f"${bn * buyin:,.0f}",
-                })
-            st.table(rows)
-except (ValueError, ZeroDivisionError):
-    pass
-
 st.divider()
 
 # ── Simulation ────────────────────────────────────────────────────────────────
@@ -171,6 +139,38 @@ if run_btn:
         )
 
     stats = compute_stats(results, probs, prizepool, buyin, int(num_tournaments))
+
+    # ── Bankroll requirement (simulated) ──────────────────────────────────────
+    st.subheader("Bankroll Requirement")
+    if roi <= 0:
+        st.warning("Bankroll requirement is undefined for zero or negative ROI.")
+    else:
+        with st.spinner("Simulating risk of ruin…"):
+            n_buyins, actual_ror = find_buyins_for_ror(prizepool, probs, buyin, ror)
+
+        bankroll_needed = n_buyins * buyin
+        br1, br2, br3, br4 = st.columns(4)
+        br1.metric("Risk Profile", f"{profile_name} ({ror_pct_str})")
+        br2.metric("Buy-ins Required", f"{n_buyins:,}")
+        br3.metric("Bankroll Required", f"${bankroll_needed:,.0f}")
+        br4.metric("Simulated RoR", f"{actual_ror:.1%}")
+
+        with st.expander("Compare all profiles"):
+            rows = []
+            for pname, pdata in RISK_PROFILES.items():
+                r = ror if pname == "Custom" else pdata["ror"]
+                if r is None:
+                    continue
+                bn, bn_ror = find_buyins_for_ror(prizepool, probs, buyin, r)
+                rows.append({
+                    "Profile": f"{pname} ({r:.1%})",
+                    "Buy-ins Required": f"{bn:,}",
+                    "Bankroll Required": f"${bn * buyin:,.0f}",
+                    "Simulated RoR": f"{bn_ror:.1%}",
+                })
+            st.table(rows)
+
+    st.divider()
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     st.subheader("Simulation Results")

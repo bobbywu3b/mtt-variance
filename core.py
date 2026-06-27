@@ -4,19 +4,13 @@ import numpy as np
 def get_weighted_probabilities(prizepool, roi, buyin):
     prizes = np.array(prizepool[:-1], dtype=float)
 
-    # Lower prizes (worse finishes near the bubble) are more likely than deeper runs.
-    # Weight inversely by payout so min-cash has highest probability.
-    base_weights = 1.0 / prizes
-    base_weights /= base_weights.sum()
+    # Each paid finish is equally likely; only p_itm is constrained by ROI.
+    # E[payout | ITM] = mean prize, so p_itm = buyin*(1+roi) / mean_prize.
+    mean_prize = prizes.mean()
+    p_itm = min((buyin * (1 + roi)) / mean_prize, 1.0)
 
-    req_avg_return = buyin * (1 + roi)
-    weighted_payout_sum = np.sum(base_weights * prizes)
-    p_itm = req_avg_return / weighted_payout_sum
-
-    probs = base_weights * p_itm
-    prob_bust = 1 - probs.sum()
-
-    return np.append(probs, prob_bust)
+    probs = np.full(len(prizes), p_itm / len(prizes))
+    return np.append(probs, 1.0 - p_itm)
 
 
 def run_simulation(prizepool, probs, buyin, num_tournaments, samples):
@@ -54,14 +48,53 @@ def generate_prizepool(num_players, buyin, rake_pct, pct_paid):
     return [round(p, 2) for p in prizes], round(total, 2), num_paid
 
 
-def compute_required_buyins(std_math, buyin, roi, ror):
-    """RoR = exp(-2 * mu * B / sigma^2) solved for B, then divided by buyin."""
-    if roi <= 0 or ror <= 0 or ror >= 1:
-        return float("inf")
-    mu = buyin * roi
-    sigma2 = std_math ** 2
-    bankroll = -np.log(ror) * sigma2 / (2 * mu)
-    return bankroll / buyin
+def _analytical_buyins(prizepool_arr, probs, buyin):
+    """Analytical RoR estimate used only to seed the binary search bounds."""
+    mean_payout = np.dot(probs, prizepool_arr)
+    roi = (mean_payout - buyin) / buyin
+    if roi <= 0:
+        return float("inf"), 0.0
+    std = np.sqrt(np.dot(probs, (prizepool_arr - mean_payout) ** 2))
+    return -np.log(0.05) * std ** 2 / (2 * buyin * roi * buyin), roi
+
+
+def simulate_risk_of_ruin(prizepool, probs, buyin, n_buyins, num_samples=500, max_tournaments=2000):
+    """
+    Vectorised RoR simulation.  Tracks running bankroll for each sample and
+    returns the fraction that ever drop below 1 buy-in over max_tournaments.
+    """
+    rng = np.random.default_rng()
+    outcomes = rng.choice(prizepool, size=(num_samples, max_tournaments), p=probs)
+    bankrolls = n_buyins * buyin + np.cumsum(outcomes - buyin, axis=1)
+    return float(np.any(bankrolls < buyin, axis=1).mean())
+
+
+def find_buyins_for_ror(prizepool, probs, buyin, target_ror, num_samples=500, max_tournaments=2000):
+    """
+    Binary search for the minimum n_buyins whose simulated RoR ≤ target_ror.
+    Seeds search bounds from the analytical formula to minimise iterations.
+    Returns (n_buyins, simulated_ror_at_result).
+    """
+    prizepool_arr = np.array(prizepool)
+    seed, roi = _analytical_buyins(prizepool_arr, probs, buyin)
+    if roi <= 0:
+        return float("inf"), 1.0
+
+    lo = max(1, int(seed * 0.25))
+    hi = max(int(seed * 3.0), lo + 100)
+
+    for _ in range(12):
+        mid = (lo + hi) // 2
+        if mid == lo:
+            break
+        ror = simulate_risk_of_ruin(prizepool, probs, buyin, mid, num_samples, max_tournaments)
+        if ror > target_ror:
+            lo = mid
+        else:
+            hi = mid
+
+    final_ror = simulate_risk_of_ruin(prizepool, probs, buyin, hi, num_samples, max_tournaments)
+    return hi, final_ror
 
 
 def compute_stats(results, probs, prizepool, buyin, num_tournaments):
