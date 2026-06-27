@@ -6,7 +6,6 @@ from core import (
     get_weighted_probabilities,
     run_simulation,
     compute_stats,
-    simulate_risk_of_ruin,
     find_buyins_for_ror,
     generate_prizepool,
 )
@@ -14,13 +13,11 @@ from core import (
 st.set_page_config(page_title="MTT Variance Simulator", layout="wide")
 
 RISK_PROFILES = {
-    "Low":    {"ror": 0.01, "description": "1% risk of ruin — very conservative, long-term safety"},
-    "Medium": {"ror": 0.05, "description": "5% risk of ruin — balanced approach for most players"},
-    "High":   {"ror": 0.10, "description": "10% risk of ruin — aggressive, accepts more volatility"},
-    "Custom": {"ror": None, "description": "Set your own risk of ruin threshold"},
+    "Low":    {"ror": 0.01},
+    "Medium": {"ror": 0.05},
+    "High":   {"ror": 0.10},
+    "Custom": {"ror": None},
 }
-
-# ── Welcome / risk profile page ───────────────────────────────────────────────
 
 if "ror" not in st.session_state:
     st.title("MTT Variance Simulator")
@@ -73,8 +70,6 @@ if "ror" not in st.session_state:
 
     st.stop()
 
-# ── Simulator page ─────────────────────────────────────────────────────────────
-
 profile_name = st.session_state["profile_name"]
 ror = st.session_state["ror"]
 ror_pct_str = f"{ror:.1%}"
@@ -88,7 +83,6 @@ if st.button("Change Risk Profile", type="secondary"):
 
 st.divider()
 
-# ── Sidebar inputs ────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Parameters")
 
@@ -108,7 +102,6 @@ with st.sidebar:
 
     run_btn = st.button("Run Simulation", type="primary", use_container_width=True)
 
-# ── Prize pool preview ────────────────────────────────────────────────────────
 prizes, total_prize_pool, num_paid = generate_prizepool(
     int(num_players), buyin, rake_pct, pct_paid
 )
@@ -129,7 +122,6 @@ with st.expander(
 
 st.divider()
 
-# ── Simulation ────────────────────────────────────────────────────────────────
 if run_btn:
     probs = get_weighted_probabilities(prizepool, roi, buyin)
 
@@ -140,7 +132,6 @@ if run_btn:
 
     stats = compute_stats(results, probs, prizepool, buyin, int(num_tournaments))
 
-    # ── Bankroll requirement (simulated) ──────────────────────────────────────
     st.subheader("Bankroll Requirement")
     if roi <= 0:
         st.warning("Bankroll requirement is undefined for zero or negative ROI.")
@@ -172,7 +163,6 @@ if run_btn:
 
     st.divider()
 
-    # ── Metrics ───────────────────────────────────────────────────────────────
     st.subheader("Simulation Results")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("EV (mathematical)", f"${stats['ev_math']:,.0f}")
@@ -187,7 +177,6 @@ if run_btn:
 
     st.divider()
 
-    # ── Charts ────────────────────────────────────────────────────────────────
     col_left, col_right = st.columns(2)
 
     with col_left:
@@ -207,12 +196,11 @@ if run_btn:
 
     with col_right:
         st.subheader("Finish Probabilities")
-        # Only show top 10 paid spots + bust to keep the chart readable
         display_prizes = prizes[:10]
         display_probs = list(probs[:10]) + [probs[-1]]
         labels = [f"${int(p):,}" for p in display_prizes] + ["Bust"]
         if len(prizes) > 10:
-            labels[-2] = f"${int(prizes[9]):,}+"  # indicate truncation
+            labels[-2] = f"${int(prizes[9]):,}+"
         colors = ["#4C72B0"] * len(display_prizes) + ["#DD4444"]
         fig2, ax2 = plt.subplots(figsize=(6, 4))
         bars = ax2.bar(labels, display_probs, color=colors, edgecolor="white", linewidth=0.4)
@@ -230,7 +218,6 @@ if run_btn:
         fig2.tight_layout()
         st.pyplot(fig2)
 
-    # ── Percentile table ──────────────────────────────────────────────────────
     st.subheader("Percentile Breakdown")
     percentiles = [5, 10, 25, 50, 75, 90, 95]
     pct_values = np.percentile(results, percentiles)

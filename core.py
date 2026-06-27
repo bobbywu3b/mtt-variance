@@ -3,9 +3,6 @@ import numpy as np
 
 def get_weighted_probabilities(prizepool, roi, buyin):
     prizes = np.array(prizepool[:-1], dtype=float)
-
-    # Each paid finish is equally likely; only p_itm is constrained by ROI.
-    # E[payout | ITM] = mean prize, so p_itm = buyin*(1+roi) / mean_prize.
     mean_prize = prizes.mean()
     p_itm = min((buyin * (1 + roi)) / mean_prize, 1.0)
 
@@ -26,20 +23,12 @@ def run_simulation(prizepool, probs, buyin, num_tournaments, samples):
 
 
 def generate_prizepool(num_players, buyin, rake_pct, pct_paid):
-    """
-    Build a geometric-decay payout structure from field parameters.
-
-    Returns (prizes, total_prize_pool, num_paid) where prizes is a list of
-    payouts in descending order (excluding the 0 bust outcome).
-    """
     total = num_players * buyin * (1 - rake_pct / 100)
     num_paid = max(1, int(num_players * pct_paid / 100))
 
     if num_paid == 1:
         return [round(total, 2)], round(total, 2), 1
 
-    # Decay ratio scales toward 1 as field grows, producing realistic top-heavy
-    # structures for small fields and flatter ones for large fields.
     r = 0.65 + 0.30 * (1 - np.exp(-num_paid / 20))
     weights = np.array([r ** k for k in range(num_paid)])
     weights /= weights.sum()
@@ -49,7 +38,6 @@ def generate_prizepool(num_players, buyin, rake_pct, pct_paid):
 
 
 def _analytical_buyins(prizepool_arr, probs, buyin):
-    """Analytical RoR estimate used only to seed the binary search bounds."""
     mean_payout = np.dot(probs, prizepool_arr)
     roi = (mean_payout - buyin) / buyin
     if roi <= 0:
@@ -59,10 +47,6 @@ def _analytical_buyins(prizepool_arr, probs, buyin):
 
 
 def simulate_risk_of_ruin(prizepool, probs, buyin, n_buyins, num_samples=500, max_tournaments=2000):
-    """
-    Vectorised RoR simulation.  Tracks running bankroll for each sample and
-    returns the fraction that ever drop below 1 buy-in over max_tournaments.
-    """
     rng = np.random.default_rng()
     outcomes = rng.choice(prizepool, size=(num_samples, max_tournaments), p=probs)
     bankrolls = n_buyins * buyin + np.cumsum(outcomes - buyin, axis=1)
@@ -70,11 +54,6 @@ def simulate_risk_of_ruin(prizepool, probs, buyin, n_buyins, num_samples=500, ma
 
 
 def find_buyins_for_ror(prizepool, probs, buyin, target_ror, num_samples=500, max_tournaments=2000):
-    """
-    Binary search for the minimum n_buyins whose simulated RoR ≤ target_ror.
-    Seeds search bounds from the analytical formula to minimise iterations.
-    Returns (n_buyins, simulated_ror_at_result).
-    """
     prizepool_arr = np.array(prizepool)
     seed, roi = _analytical_buyins(prizepool_arr, probs, buyin)
     if roi <= 0:
